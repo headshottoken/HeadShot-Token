@@ -114,7 +114,7 @@ contract HeadShotSalesLedger is Context, IERC20, Ownable {
         return headShotTracker.getFieldAddress(key_);
     }
 
-    function buy(address account_, uint256 code_, uint256 count_) public onlyOwner returns (bool) {
+    function buy(address account_, uint256 code_, uint256 count_) external returns (bool) {
         if (getSalesCode(code_) == code_){
             HeadShotTracker headShotTracker =
             HeadShotTracker(payable(getTrackerAddress(code_)));
@@ -123,12 +123,10 @@ contract HeadShotSalesLedger is Context, IERC20, Ownable {
         return false;
     }
 
-    function spend(address account_, uint256 code_, uint256 count_) public onlyOwner returns (bool) {
+    function spend(address account_, uint256 code_, uint256 count_) external returns (bool) {
         if (getSalesCode(code_) == code_){
-            HeadShotTracker headShotTracker =
-            HeadShotTracker(payable(getTrackerAddress(code_)));
-            bool trx = headShotTracker.spend(account_, count_);
-            return trx;
+            HeadShotTracker headShotTracker = HeadShotTracker(payable(getTrackerAddress(code_)));
+            return headShotTracker.spend(account_, count_);
         }
         return false;
     }

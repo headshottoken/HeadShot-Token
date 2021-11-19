@@ -22,6 +22,7 @@ interface IHeadShotSalesLedger {
     function listSalesPart2(uint limit_, uint page_) external view returns (
         uint256[] memory, string[] memory, uint256[] memory);
     function listSalesTracker(uint limit_, uint page_) external view returns (address[] memory);
+    function transferOwnership(address newOwner) external;
 }
 
 interface IHeadShotTokenLedger {
@@ -41,6 +42,7 @@ interface IHeadShotTokenLedger {
     function listTokenTracker(uint limit_, uint page_) external view returns (address[] memory);
     function voteUp(address account_, address tokenAddress_) external returns (bool);
     function voteDown(address account_, address tokenAddress_) external returns (bool);
+    function transferOwnership(address newOwner) external;
 }
 
 interface IHeadShotLedger {
@@ -55,10 +57,18 @@ interface IHeadShotLedger {
     function listTrx(uint256 code_, address account_) external view returns (
         uint256[] memory, address[] memory, uint256[] memory, uint256[] memory);
     function listTracker(uint limit_, uint page_) external view returns (address[] memory);
+    function transferOwnership(address newOwner) external;
 }
 
-contract ERC20 {
-    uint256 public decimals;
+interface IHeadShotToken {
+    function approve(address spender, uint256 amount) external returns (bool);
+    function transferFrom(address sender, address recipient, uint256 amount) external returns (bool);
+    function transferFromContract(address sender, address recipient, uint256 amount) external returns (bool);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function transfer(address recipient, uint256 amount) external returns (bool);
+    function decimals() external pure returns (uint8);
+    function increaseAllowance(address spender, uint256 addedValue) external returns (bool);
+    function balanceOf(address account) external view returns (uint256);
 }
 
 contract HeadShotFactory is Context, Ownable {
@@ -67,7 +77,7 @@ contract HeadShotFactory is Context, Ownable {
 
     IHeadShotSalesLedger public headShotSalesLedger;
     IHeadShotTokenLedger public headShotTokenLedger;
-    IERC20 public headShotToken;
+    IHeadShotToken public headShotToken;
 
     mapping(address => address) public _ledgerMap;
     address[] public _ledgerList;
@@ -79,15 +89,15 @@ contract HeadShotFactory is Context, Ownable {
     uint256 _decimals;
 
     constructor () {
-        _salesLedgerAddress = 0x7d3f1c373523ec76a2bD1254577B742323329E11; // in Ropsten
+        _salesLedgerAddress = 0x2D0873E39bA0C029200c1f560D28eE99966811E8; // in Ropsten
         headShotSalesLedger = IHeadShotSalesLedger(_salesLedgerAddress);
 
-        _tokenLedgerAddress = 0x92edD3DDe854bc9283064AcC036D7D0A36EE5F01; // in Ropsten
+        _tokenLedgerAddress = 0x197Ef964af5714414f419E11DF6418FD471E5EDc; // in Ropsten
         headShotTokenLedger = IHeadShotTokenLedger(_tokenLedgerAddress);
 
         _tokenAddress = 0xcC9510f9cc3c736FB164A7CAB935DC79D0fa4909; // in Ropsten
-        headShotToken = IERC20(_tokenAddress);
-        _decimals = ERC20(_tokenAddress).decimals();
+        headShotToken = IHeadShotToken(_tokenAddress);
+        _decimals = headShotToken.decimals();
 
         _salesWalletAddress = 0xD7c891f24eEEeE63BB420B177E4cB52b1123FEEd;
     }
@@ -120,8 +130,8 @@ contract HeadShotFactory is Context, Ownable {
     function setAddressToken(address payable address_) public onlyOwner {
         require(address_ != address(0), "ERR: Transfer to the zero address");
         _tokenAddress = address_;
-        headShotToken = IERC20(_tokenAddress);
-        _decimals = ERC20(_tokenAddress).decimals();
+        headShotToken = IHeadShotToken(_tokenAddress);
+        _decimals = headShotToken.decimals();
     }
     function addLedger(address ledgerAddress_) public onlyOwner returns (bool) {
         _ledgerMap[ledgerAddress_] = ledgerAddress_;
@@ -171,6 +181,17 @@ contract HeadShotFactory is Context, Ownable {
     }
 
     /* Features */
+    function transferSalesOwnership(address newOwner) public onlyOwner {
+        return headShotSalesLedger.transferOwnership(newOwner);
+    }
+    function transferTokenOwnership(address newOwner) public onlyOwner {
+        return headShotTokenLedger.transferOwnership(newOwner);
+    }
+    function transferGeneralOwnership(address address_, address newOwner) public onlyOwner {
+        require(_ledgerMap[address_] == address_, "ERR: Ledger not found");
+        IHeadShotLedger headShotLedger = IHeadShotLedger(address_);
+        return headShotLedger.transferOwnership(newOwner);
+    }
     function addSales(uint256 category_, uint256 code_, string memory name_,
         string memory desc_, uint256 price_, uint256 maxBuy_) public onlyOwner returns (bool){
         require(headShotSalesLedger.getSalesCode(code_) != code_, "ERR: Sales already exist");
@@ -195,11 +216,35 @@ contract HeadShotFactory is Context, Ownable {
 
             require(_newCount > 0, "ERR: Rejected, Over balance");
             uint256 _totalPay = _price.mul(_newCount);
-            headShotToken.transferFrom(_account, _salesWalletAddress, _totalPay);
+            headShotToken.transferFromContract(_account, _salesWalletAddress, _totalPay);
             return headShotSalesLedger.buy(_account, code_, _newCount);
         }
         return false;
     }
+
+    function check(uint256 code_, uint256 count_) public view returns (address, address, uint256, uint256, uint256) {
+        if (headShotSalesLedger.getSalesCode(code_) == code_){
+            address _account = _msgSender();
+            uint256 _price = headShotSalesLedger.getTrackerFieldNumber(code_, "price");
+            uint256 _maxBuy = headShotSalesLedger.getTrackerFieldNumber(code_, "maxBuy");
+            uint256 _accountBal = headShotSalesLedger.getAccountBalance(code_, _account);
+            uint256 _newCount = count_;
+
+            if (_maxBuy > 0){
+                uint256 _balAfter = _accountBal.add(_newCount);
+                uint256 maxCount_ = (_maxBuy.sub(_balAfter)).add(_newCount);
+                if (_newCount > maxCount_){
+                    _newCount = maxCount_;
+                }
+            }
+            uint x = headShotToken.balanceOf(_account);
+            uint y = headShotToken.balanceOf(address(this));
+            //uint256 _totalPay = _price.mul(_newCount);
+            return (_account, _salesWalletAddress, _price, x, y);
+        }
+        return (address(0), address(0), 0, 0, 0);
+    }
+
     function addToken(uint256 code_, address address_, string memory network_,
         string memory name_, string memory symbol_, uint256 decimals_) public onlyOwner returns (bool) {
         require(code_ != 0, "ERR: Zero code");
